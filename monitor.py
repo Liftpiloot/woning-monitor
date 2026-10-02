@@ -2,7 +2,7 @@
 """
 Huissleutel Monitor
 Automatische monitoring van nieuw woningaanbod op https://www.dehuissleutel.nl/nl/aanbod
-met WhatsApp-notificaties via CallMeBot.
+met WhatsApp-notificaties via CallMeBot (ondersteuning voor meerdere telefoonnummers).
 """
 
 import json
@@ -28,7 +28,7 @@ BASE_URL = "https://www.dehuissleutel.nl"
 AANBOD_URL = "https://www.dehuissleutel.nl/nl/aanbod"
 SEEN_LISTINGS_FILE = os.getenv("SEEN_LISTINGS_FILE", "seen_listings.json")
 
-# Realistische browser headers om webscraping-blokkades te voorkomen
+# Browser headers om weigeringen of blokkades te voorkomen
 BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -66,6 +66,61 @@ def load_env_file(filepath: str = ".env") -> None:
                 os.environ.setdefault(key, val)
     except Exception as e:
         logger.warning(f"Fout bij lezen van {filepath}: {e}")
+
+
+def get_whatsapp_recipients() -> List[Dict[str, str]]:
+    """
+    Haalt alle geconfigureerde WhatsApp-ontvangers op uit omgevingsvariabelen.
+    Ondersteunt:
+    - WHATSAPP_PHONE & CALLMEBOT_API_KEY (hoofdnummer)
+    - WHATSAPP_PHONE_2 & CALLMEBOT_API_KEY_2 (tweede nummer)
+    - Genummerde variabelen: WHATSAPP_PHONE_N & CALLMEBOT_API_KEY_N (bijv. 3, 4, ...)
+    - Komma-gescheiden telefoonnummers en API-keys in WHATSAPP_PHONE en CALLMEBOT_API_KEY
+    """
+    recipients: List[Dict[str, str]] = []
+    seen_phones = set()
+
+    def add_recipient(phone: str, api_key: str, label: str) -> None:
+        p = phone.strip()
+        k = api_key.strip()
+        if p and k and p not in seen_phones:
+            seen_phones.add(p)
+            recipients.append({"phone": p, "api_key": k, "label": label})
+
+    # 1. Hoofdnummer (standaard of _1)
+    phone_1 = os.getenv("WHATSAPP_PHONE", "").strip() or os.getenv("WHATSAPP_PHONE_1", "").strip()
+    key_1 = os.getenv("CALLMEBOT_API_KEY", "").strip() or os.getenv("CALLMEBOT_API_KEY_1", "").strip()
+
+    # Ondersteun eventuele komma-gescheiden invoer in WHATSAPP_PHONE
+    if "," in phone_1:
+        phones = [p.strip() for p in phone_1.split(",") if p.strip()]
+        keys = [k.strip() for k in key_1.split(",") if k.strip()]
+        for idx, p in enumerate(phones):
+            k = keys[idx] if idx < len(keys) else (keys[0] if keys else "")
+            add_recipient(p, k, f"Ontvanger {idx + 1}")
+    else:
+        add_recipient(phone_1, key_1, "Ontvanger 1")
+
+    # 2. Tweede en volgende nummers via WHATSAPP_PHONE_2, WHATSAPP_PHONE_3, etc.
+    idx = 2
+    while True:
+        phone_n = os.getenv(f"WHATSAPP_PHONE_{idx}", "").strip()
+        key_n = os.getenv(f"CALLMEBOT_API_KEY_{idx}", "").strip() or key_1
+
+        if not phone_n:
+            if idx > 10:
+                break
+            # Kijk of er eventueel hogere indexen zijn ingesteld
+            any_higher = any(os.getenv(f"WHATSAPP_PHONE_{i}") for i in range(idx + 1, idx + 5))
+            if not any_higher:
+                break
+            idx += 1
+            continue
+
+        add_recipient(phone_n, key_n, f"Ontvanger {idx}")
+        idx += 1
+
+    return recipients
 
 
 def load_seen_listings(filepath: str = SEEN_LISTINGS_FILE) -> List[str]:
@@ -203,46 +258,47 @@ def fetch_listings() -> List[Dict[str, str]]:
     return listings
 
 
-def send_whatsapp_notification(phone: str, api_key: str, message: str) -> bool:
+def send_whatsapp_notification(phone: str, api_key: str, message: str, label: str = "") -> bool:
     """
-    Verstuurt een WhatsApp-notificatie via de CallMeBot API.
+    Verstuurt een WhatsApp-notificatie via de CallMeBot API naar één ontvanger.
     URL formaat: https://api.callmebot.com/whatsapp.php?phone={phone}&text={text}&apikey={apikey}
     """
     if not phone or not api_key:
-        logger.error("Kan WhatsApp-bericht niet versturen: WHATSAPP_PHONE en/of CALLMEBOT_API_KEY ontbreekt.")
+        logger.error(f"Kan WhatsApp-bericht niet versturen naar {label or phone}: telefoonnummer of API-key ontbreekt.")
         return False
 
     encoded_text = urllib.parse.quote_plus(message)
     endpoint = f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded_text}&apikey={api_key}"
 
+    target_display = f"{label} ({phone})" if label else phone
     try:
-        logger.info(f"CallMeBot WhatsApp bericht verzenden naar {phone}...")
+        logger.info(f"WhatsApp-notificatie verzenden naar {target_display}...")
         response = requests.get(endpoint, timeout=15)
         if response.status_code == 200:
-            logger.info("WhatsApp-notificatie succesvol verzonden via CallMeBot.")
+            logger.info(f"WhatsApp-notificatie succesvol verzonden naar {target_display}.")
             return True
         else:
-            logger.error(f"CallMeBot API fout (Status {response.status_code}): {response.text.strip()}")
+            logger.error(f"CallMeBot API-fout voor {target_display} (Status {response.status_code}): {response.text.strip()}")
             return False
     except requests.RequestException as e:
-        logger.error(f"Fout tijdens CallMeBot API request: {e}")
+        logger.error(f"Fout tijdens CallMeBot API-verzoek naar {target_display}: {e}")
         return False
 
 
 def format_whatsapp_message(listing: Dict[str, str]) -> str:
     """
-    Formatteert een aantrekkelijk WhatsApp-bericht voor een nieuwe woning.
+    Formatteert de WhatsApp-notificatie voor een nieuw woningaanbod.
     """
     lines = [
-        "🏠 *Nieuwe woning online op De Huissleutel!*",
+        "*De Huissleutel - Nieuw woningaanbod*",
         "",
-        f"📍 *Adres:* {listing['title']}",
+        f"*Adres:* {listing['title']}",
     ]
     if listing.get("price"):
-        lines.append(f"💰 *Prijs:* {listing['price']}")
+        lines.append(f"*Prijs:* {listing['price']}")
     if listing.get("details"):
-        lines.append(f"ℹ️ *Details:* {listing['details']}")
-    lines.append(f"🔗 *Link:* {listing['url']}")
+        lines.append(f"*Details:* {listing['details']}")
+    lines.append(f"*Link:* {listing['url']}")
 
     return "\n".join(lines)
 
@@ -251,34 +307,36 @@ def run_monitor() -> None:
     """
     Voert de monitoring cyclus uit:
     1. Laad omgevingsvariabelen (.env en environment)
-    2. Laad reeds geziene listings
-    3. Haal actueel aanbod op
-    4. Detecteer nieuwe woningen
-    5. Stuur WhatsApp notificaties via CallMeBot
-    6. Werk seen_listings.json bij
+    2. Zoek alle geconfigureerde WhatsApp-ontvangers
+    3. Laad reeds geziene listings
+    4. Haal actueel aanbod op
+    5. Detecteer nieuwe woningen
+    6. Stuur WhatsApp notificaties naar alle ontvangers
+    7. Werk seen_listings.json bij
     """
     load_env_file()
 
-    whatsapp_phone = os.getenv("WHATSAPP_PHONE", "").strip()
-    callmebot_api_key = os.getenv("CALLMEBOT_API_KEY", "").strip()
-
-    has_credentials = bool(whatsapp_phone and callmebot_api_key)
-    if not has_credentials:
+    recipients = get_whatsapp_recipients()
+    if not recipients:
         logger.warning(
-            "Configuratiewaarschuwing: WHATSAPP_PHONE en/of CALLMEBOT_API_KEY zijn niet ingesteld. "
-            "Er worden geen daadwerkelijke WhatsApp-berichten verzonden."
+            "Configuratiewaarschuwing: Geen geldige WhatsApp-ontvangers gevonden. "
+            "Stel WHATSAPP_PHONE en CALLMEBOT_API_KEY in (.env of omgevingsvariabelen). "
+            "Voor een extra nummer kun je ook WHATSAPP_PHONE_2 en CALLMEBOT_API_KEY_2 instellen."
         )
+    else:
+        logger.info(f"{len(recipients)} WhatsApp-ontvanger(s) geconfigureerd: " +
+                    ", ".join(f"{r['label']} ({r['phone']})" for r in recipients))
 
     seen_ids = set(load_seen_listings(SEEN_LISTINGS_FILE))
     current_listings = fetch_listings()
 
-    new_listings = [item for item in current_listings if item["id"] not in seen_ids]
+    new_listings = [item for item in current_listings if item["id"] and item["id"] not in seen_ids]
 
     if not new_listings:
         logger.info("Geen nieuwe woningen aangetroffen. Alles is up-to-date.")
         return
 
-    logger.info(f"{len(new_listings)} NIEUWE woning(en) gevonden!")
+    logger.info(f"{len(new_listings)} nieuwe woning(en) gevonden.")
 
     updated_seen_ids = list(seen_ids)
 
@@ -286,23 +344,29 @@ def run_monitor() -> None:
         logger.info(f"Nieuw aanbod: '{listing['title']}' ({listing['url']})")
         message = format_whatsapp_message(listing)
 
-        if has_credentials:
-            send_whatsapp_notification(whatsapp_phone, callmebot_api_key, message)
+        if recipients:
+            for recipient in recipients:
+                send_whatsapp_notification(
+                    phone=recipient["phone"],
+                    api_key=recipient["api_key"],
+                    message=message,
+                    label=recipient["label"],
+                )
         else:
-            logger.info("WhatsApp verzending overgeslagen wegens ontbrekende inloggegevens.")
+            logger.info("WhatsApp-verzending overgeslagen wegens ontbrekende inloggegevens.")
             logger.debug(f"Concept-bericht:\n{message}")
 
         updated_seen_ids.append(listing["id"])
 
     save_seen_listings(updated_seen_ids, SEEN_LISTINGS_FILE)
-    logger.info("Monitoring cyclus succesvol afgerond.")
+    logger.info("Monitoringcyclus afgerond.")
 
 
 def main() -> None:
     try:
         run_monitor()
     except KeyboardInterrupt:
-        logger.info("Monitor handmatig gestopt door gebruiker.")
+        logger.info("Monitor gestopt door gebruiker.")
         sys.exit(0)
     except Exception as e:
         logger.exception(f"Onverwachte fout opgetreden: {e}")

@@ -31,6 +31,8 @@ jobs:
         env:
           WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
           CALLMEBOT_API_KEY: ${{ secrets.CALLMEBOT_API_KEY }}
+          WHATSAPP_PHONE_2: ${{ secrets.WHATSAPP_PHONE_2 }}
+          CALLMEBOT_API_KEY_2: ${{ secrets.CALLMEBOT_API_KEY_2 }}
         run: |
           python monitor.py
 
