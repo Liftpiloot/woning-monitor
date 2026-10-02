@@ -1,10 +1,7 @@
 name: Check Listings
 
 on:
-  schedule:
-    # Run every 10 minutes (best-effort)
-    - cron: '*/10 * * * *'
-  workflow_dispatch: # Enable manual / webhook triggering from external scheduler
+  workflow_dispatch: # Triggered via external scheduler (cron-job.org) or manual dispatch
 
 jobs:
   check-and-notify:
