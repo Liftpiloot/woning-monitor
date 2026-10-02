@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hoofdingang voor huissleutel-monitor.
+Hoofdingang voor de woning monitor.
 Roept de monitoringsfunctionaliteit in monitor.py aan.
 """
 

@@ -2,9 +2,9 @@ name: Check Listings
 
 on:
   schedule:
-    # Run every 10 minutes
+    # Run every 10 minutes (best-effort)
     - cron: '*/10 * * * *'
-  workflow_dispatch: # Enable manual triggering from GitHub UI
+  workflow_dispatch: # Enable manual / webhook triggering from external scheduler
 
 jobs:
   check-and-notify:
@@ -33,6 +33,9 @@ jobs:
           CALLMEBOT_API_KEY: ${{ secrets.CALLMEBOT_API_KEY }}
           WHATSAPP_PHONE_2: ${{ secrets.WHATSAPP_PHONE_2 }}
           CALLMEBOT_API_KEY_2: ${{ secrets.CALLMEBOT_API_KEY_2 }}
+          PORTAL_URL: ${{ secrets.PORTAL_URL }}
+          PORTAL_BASE_URL: ${{ secrets.PORTAL_BASE_URL }}
+          PORTAL_NAME: ${{ secrets.PORTAL_NAME }}
         run: |
           python monitor.py
 
