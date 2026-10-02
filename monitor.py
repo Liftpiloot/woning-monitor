@@ -56,10 +56,11 @@ load_env_file()
 _DEFAULT_BASE = base64.b64decode("aHR0cHM6Ly93d3cuZGVodWlzc2xldXRlbC5ubA==").decode("utf-8")
 _DEFAULT_AANBOD = base64.b64decode("aHR0cHM6Ly93d3cuZGVodWlzc2xldXRlbC5ubC9ubC9hYW5ib2Q=").decode("utf-8")
 
-BASE_URL = os.getenv("PORTAL_BASE_URL", _DEFAULT_BASE).rstrip("/")
-AANBOD_URL = os.getenv("PORTAL_URL", _DEFAULT_AANBOD)
-PORTAL_NAME = os.getenv("PORTAL_NAME", "Woningaanbod")
-SEEN_LISTINGS_FILE = os.getenv("SEEN_LISTINGS_FILE", "seen_listings.json")
+# Gebruik strip() or default om te voorkomen dat lege secrets uit GitHub Actions de default overschrijven
+BASE_URL = (os.getenv("PORTAL_BASE_URL", "").strip() or _DEFAULT_BASE).rstrip("/")
+AANBOD_URL = os.getenv("PORTAL_URL", "").strip() or _DEFAULT_AANBOD
+PORTAL_NAME = os.getenv("PORTAL_NAME", "").strip() or "Woningaanbod"
+SEEN_LISTINGS_FILE = os.getenv("SEEN_LISTINGS_FILE", "").strip() or "seen_listings.json"
 
 # Browser headers
 BROWSER_HEADERS = {
@@ -296,7 +297,7 @@ def format_whatsapp_message(listing: Dict[str, str]) -> str:
     """
     Formatteert de WhatsApp-notificatie voor een nieuw woningaanbod.
     """
-    portal_label = os.getenv("PORTAL_NAME", PORTAL_NAME)
+    portal_label = os.getenv("PORTAL_NAME", "").strip() or PORTAL_NAME
     lines = [
         f"*{portal_label} - Nieuw woningaanbod*",
         "",
