@@ -52,8 +52,7 @@ pip install -r requirements.txt
 ```
 
 ### Stap 2: Omgevingsvariabelen instellen
-Kopieer `.env.example` naar `.env`:
-```bash
+Kopieer `.env.example` naar `.env`:\n```bash
 cp .env.example .env
 ```
 Open `.env` en vul je gegevens in:
@@ -85,11 +84,11 @@ Het script zal:
 
 ## 3. GitHub Actions instellen (24/7 Monitoring)
 
-Deze repository bevat een workflow in [`.github/workflows/check_listings.yml`](.github/workflows/check_listings.yml) die elke 10 minuten automatisch draait.
+Deze repository bevat een workflow in [`.github/workflows/check_listings.yml`](.github/workflows/check_listings.yml).
 
 ### Secrets configureren in GitHub:
 1. Ga in je GitHub repository naar **Settings** > **Secrets and variables** > **Actions**.
-2. Klik op **New repository secret****.
+2. Klik op **New repository secret**.
 3. Voeg de vereiste secrets toe:
    - `WHATSAPP_PHONE`: Telefoonnummer 1 (bijv. `31612345678`).
    - `CALLMEBOT_API_KEY`: API-key voor telefoonnummer 1.
@@ -103,8 +102,29 @@ Om de bijgewerkte `seen_listings.json` terug te kunnen pushen naar de repository
 2. Scroll naar **Workflow permissions**.
 3. Selecteer **Read and write permissions** en klik op **Save**.
 
-### Handmatig testen op GitHub:
-Ga naar het tabblad **Actions** in GitHub, selecteer **Check Listings** en klik op **Run workflow**.
+### Betrouwbare 10-minuten trigger via cron-job.org (Aanbevolen)
+De ingebouwde cron van GitHub Actions (`schedule`) is "best-effort" en loopt tijdens piekdrukte op GitHub vaak 15 tot 60+ minuten vertraging op of wordt overgeslagen. Omdat de workflow [`workflow_dispatch`](.github/workflows/check_listings.yml) ondersteunt, kun je hem via een gratis externe cron-dienst stipt elke 10 minuten activeren:
+
+1. **Maak een GitHub Personal Access Token (PAT) aan:**
+   - Ga naar GitHub **Settings** > **Developer Settings** > **Personal access tokens** (Tokens classic of Fine-grained).
+   - Geef de token permissies voor Actions (`actions:write` of vink `repo` aan).
+   - Kopieer de gegenereerde token.
+
+2. **Stel de taak in op [cron-job.org](https://cron-job.org) (gratis):**
+   - Maak een account aan en klik op **Create cronjob**.
+   - **Title:** `Huissleutel Monitor Trigger`
+   - **URL:** `https://api.github.com/repos/Liftpiloot/huissleutel-monitor/actions/workflows/check_listings.yml/dispatches`
+   - **Execution schedule:** Every `10` minutes.
+   - **Request Method:** `POST`
+   - **Headers:**
+     - `Authorization`: `Bearer <JOUW_GITHUB_PAT>`
+     - `Accept`: `application/vnd.github+json`
+     - `User-Agent`: `cron-job-agent`
+   - **Request Body:**
+     ```json
+     {"ref": "main"}
+     ```
+   - Klik op **Save**. Je workflow start nu stipt elke 10 minuten.
 
 ---
 
@@ -114,7 +134,7 @@ Ga naar het tabblad **Actions** in GitHub, selecteer **Check Listings** en klik 
 huissleutel-monitor/
 ├── .github/
 │   └── workflows/
-│       └── check_listings.yml   # GitHub Actions cron workflow (elke 10 min)
+│       └── check_listings.yml   # GitHub Actions workflow (met workflow_dispatch & schedule)
 ├── .env.example                 # Voorbeeldconfiguratie (incl. optioneel 2e nummer)
 ├── .gitignore                   # Negeert .env, venvs, cache (behoudt seen_listings.json)
 ├── main.py                      # Handig startpunt / entrypoint
