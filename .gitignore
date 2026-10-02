@@ -1,0 +1,22 @@
+# Environment variables
+.env
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE files
+.idea/
+.vscode/
+
+# seen_listings.json must NOT be ignored (tracked by git for GitHub Actions state synchronization)
+!seen_listings.json
