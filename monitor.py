@@ -54,11 +54,17 @@ load_env_file()
 
 # Doel-portaal configuratie (kan aangepast worden via omgevingsvariabelen / secrets)
 _DEFAULT_BASE = base64.b64decode("aHR0cHM6Ly93d3cuZGVodWlzc2xldXRlbC5ubA==").decode("utf-8")
-_DEFAULT_AANBOD = base64.b64decode("aHR0cHM6Ly93d3cuZGVodWlzc2xldXRlbC5ubC9ubC9hYW5ib2QvaHV1cndvbmluZ2Vu").decode("utf-8")
+_DEFAULT_AANBOD_PATHS = [
+    "/nl/aanbod/huurwoningen",
+    "/nl/aanbod",
+]
 
 # Gebruik strip() or default om te voorkomen dat lege secrets uit GitHub Actions de default overschrijven
 BASE_URL = (os.getenv("PORTAL_BASE_URL", "").strip() or _DEFAULT_BASE).rstrip("/")
-AANBOD_URL = os.getenv("PORTAL_URL", "").strip() or _DEFAULT_AANBOD
+_CUSTOM_AANBOD_URL = os.getenv("PORTAL_URL", "").strip()
+DEFAULT_AANBOD_URLS = [urllib.parse.urljoin(_DEFAULT_BASE + "/", path.lstrip("/")) for path in _DEFAULT_AANBOD_PATHS]
+AANBOD_URLS = [_CUSTOM_AANBOD_URL] if _CUSTOM_AANBOD_URL else DEFAULT_AANBOD_URLS
+AANBOD_URL = AANBOD_URLS[0]
 PORTAL_NAME = os.getenv("PORTAL_NAME", "").strip() or "Woningaanbod"
 SEEN_LISTINGS_FILE = os.getenv("SEEN_LISTINGS_FILE", "").strip() or "seen_listings.json"
 EXCLUDED_AANBOD_PATHS = {
@@ -206,83 +212,90 @@ def is_listing_href(href: str) -> bool:
 
 def fetch_listings() -> List[Dict[str, str]]:
     """
-    Haalt de aanbodpagina op en parseert alle actuele woningen.
+    Haalt de aanbodpagina('s) op en parseert alle actuele woningen.
     """
-    logger.info(f"Woningaanbod ophalen van {AANBOD_URL}...")
-    try:
-        response = requests.get(AANBOD_URL, headers=BROWSER_HEADERS, timeout=15)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        logger.error(f"Netwerkfout bij ophalen van aanbodpagina: {e}")
-        return []
-
-    soup = BeautifulSoup(response.text, "html.parser")
+    logger.info(f"Woningaanbod ophalen van {', '.join(AANBOD_URLS)}...")
     listings: List[Dict[str, str]] = []
     seen_ids = set()
 
-    # 1. Doorzoek de woningcards voor gestructureerde data
-    cards = soup.find_all("div", class_="card")
-    for card in cards:
-        woning_a = None
-        for a in card.find_all("a", href=True):
-            href = a["href"].strip()
-            if is_listing_href(href):
-                woning_a = a
-                break
-
-        if not woning_a:
+    for aanbod_url in AANBOD_URLS:
+        try:
+            response = requests.get(aanbod_url, headers=BROWSER_HEADERS, timeout=15)
+            response.raise_for_status()
+        except requests.RequestException as e:
+            logger.error(f"Netwerkfout bij ophalen van aanbodpagina {aanbod_url}: {e}")
             continue
 
-        raw_href = woning_a["href"].strip()
-        listing_id = get_listing_identifier(raw_href)
-        if listing_id in seen_ids:
-            continue
-        seen_ids.add(listing_id)
+        soup = BeautifulSoup(response.text, "html.parser")
 
-        full_url = urllib.parse.urljoin(BASE_URL, raw_href)
+        # 1. Doorzoek de woningcards voor gestructureerde data
+        cards = soup.find_all("div", class_="card")
+        for card in cards:
+            woning_a = None
+            for a in card.find_all("a", href=True):
+                href = a["href"].strip()
+                if is_listing_href(href):
+                    woning_a = a
+                    break
 
-        # Titel / Adres ophalen
-        title_el = card.find("h5", class_="pb-0") or card.find("h5")
-        title = title_el.get_text(" ", strip=True) if title_el else "Nieuwe Woning"
+            if not woning_a:
+                continue
 
-        # Huurprijs ophalen
-        price_el = card.find("h5", class_="u-text-gold") or card.find(class_=lambda c: c and "gold" in c)
-        price = price_el.get_text(" ", strip=True) if price_el else ""
-
-        # Extra woningdetails ophalen (type woning, m2, etc.)
-        detail_lines = []
-        for mt_div in card.find_all("div", class_=lambda c: c and ("mt-1" in c or "mt-2" in c)):
-            text = mt_div.get_text(" ", strip=True)
-            if text and text not in detail_lines:
-                detail_lines.append(text)
-        details = " | ".join(detail_lines) if detail_lines else ""
-
-        listings.append({
-            "id": listing_id,
-            "url": full_url,
-            "title": title,
-            "price": price,
-            "details": details,
-        })
-
-    # 2. Fallback: vind eventuele <a> tags die buiten cards staan
-    for a in soup.find_all("a", href=True):
-        raw_href = a["href"].strip()
-        if is_listing_href(raw_href):
+            raw_href = woning_a["href"].strip()
             listing_id = get_listing_identifier(raw_href)
-            if listing_id not in seen_ids:
-                seen_ids.add(listing_id)
-                full_url = urllib.parse.urljoin(BASE_URL, raw_href)
-                text = a.get_text(" ", strip=True) or "Woninglink"
-                listings.append({
-                    "id": listing_id,
-                    "url": full_url,
-                    "title": text,
-                    "price": "",
-                    "details": "",
-                })
+            if listing_id in seen_ids:
+                continue
+            seen_ids.add(listing_id)
 
-    logger.info(f"{len(listings)} actieve woning(en) gevonden op de website.")
+            full_url = urllib.parse.urljoin(BASE_URL, raw_href)
+
+            # Titel / Adres ophalen
+            title_el = card.find("h5", class_="pb-0") or card.find("h5")
+            title = title_el.get_text(" ", strip=True) if title_el else "Nieuwe Woning"
+
+            # Huurprijs ophalen
+            price_el = card.find("h5", class_="u-text-gold") or card.find(class_=lambda c: c and "gold" in c)
+            price = price_el.get_text(" ", strip=True) if price_el else ""
+
+            # Extra woningdetails ophalen (type woning, m2, etc.)
+            detail_lines = []
+            for mt_div in card.find_all("div", class_=lambda c: c and ("mt-1" in c or "mt-2" in c)):
+                text = mt_div.get_text(" ", strip=True)
+                if text and text not in detail_lines:
+                    detail_lines.append(text)
+            details = " | ".join(detail_lines) if detail_lines else ""
+
+            listings.append({
+                "id": listing_id,
+                "url": full_url,
+                "title": title,
+                "price": price,
+                "details": details,
+            })
+
+        # 2. Fallback: vind eventuele <a> tags die buiten cards staan
+        for a in soup.find_all("a", href=True):
+            raw_href = a["href"].strip()
+            if not is_listing_href(raw_href):
+                continue
+
+            listing_id = get_listing_identifier(raw_href)
+            if listing_id in seen_ids:
+                continue
+            seen_ids.add(listing_id)
+            full_url = urllib.parse.urljoin(BASE_URL, raw_href)
+            text = a.get_text(" ", strip=True) or "Woninglink"
+            listings.append({
+                "id": listing_id,
+                "url": full_url,
+                "title": text,
+                "price": "",
+                "details": "",
+            })
+
+        logger.info(f"{len(listings)} unieke woning(en) verzameld na {aanbod_url}.")
+
+    logger.info(f"{len(listings)} actieve unieke woning(en) gevonden op de website.")
     return listings
 
 
