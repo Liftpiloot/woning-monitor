@@ -54,13 +54,21 @@ load_env_file()
 
 # Doel-portaal configuratie (kan aangepast worden via omgevingsvariabelen / secrets)
 _DEFAULT_BASE = base64.b64decode("aHR0cHM6Ly93d3cuZGVodWlzc2xldXRlbC5ubA==").decode("utf-8")
-_DEFAULT_AANBOD = base64.b64decode("aHR0cHM6Ly93d3cuZGVodWlzc2xldXRlbC5ubC9ubC9hYW5ib2Q=").decode("utf-8")
+_DEFAULT_AANBOD = base64.b64decode("aHR0cHM6Ly93d3cuZGVodWlzc2xldXRlbC5ubC9ubC9hYW5ib2QvaHV1cndvbmluZ2Vu").decode("utf-8")
 
 # Gebruik strip() or default om te voorkomen dat lege secrets uit GitHub Actions de default overschrijven
 BASE_URL = (os.getenv("PORTAL_BASE_URL", "").strip() or _DEFAULT_BASE).rstrip("/")
 AANBOD_URL = os.getenv("PORTAL_URL", "").strip() or _DEFAULT_AANBOD
 PORTAL_NAME = os.getenv("PORTAL_NAME", "").strip() or "Woningaanbod"
 SEEN_LISTINGS_FILE = os.getenv("SEEN_LISTINGS_FILE", "").strip() or "seen_listings.json"
+EXCLUDED_AANBOD_PATHS = {
+    "/nl/aanbod",
+    "/aanbod",
+    "/nl/aanbod/huurwoningen",
+    "/aanbod/huurwoningen",
+    "/nl/aanbod/koopwoningen",
+    "/aanbod/koopwoningen",
+}
 
 # Browser headers
 BROWSER_HEADERS = {
@@ -180,6 +188,22 @@ def get_listing_identifier(href: str) -> str:
     return cleaned.strip("/")
 
 
+def is_listing_href(href: str) -> bool:
+    """
+    Controleert of een href verwijst naar een woninglisting en niet naar een aanbod-tabblad.
+    """
+    cleaned_href = href.strip()
+    if not cleaned_href:
+        return False
+
+    parsed = urllib.parse.urlparse(urllib.parse.urljoin(BASE_URL + "/", cleaned_href))
+    normalized_path = parsed.path.rstrip("/") or "/"
+    if normalized_path in EXCLUDED_AANBOD_PATHS:
+        return False
+
+    return any(key in normalized_path for key in ("/woning/", "/aanbod/"))
+
+
 def fetch_listings() -> List[Dict[str, str]]:
     """
     Haalt de aanbodpagina op en parseert alle actuele woningen.
@@ -202,11 +226,9 @@ def fetch_listings() -> List[Dict[str, str]]:
         woning_a = None
         for a in card.find_all("a", href=True):
             href = a["href"].strip()
-            # Herken woning- of aanbodlinks (exclusief overzichtspagina)
-            if any(key in href for key in ("nl/woning/", "/woning/", "nl/aanbod/", "/aanbod/")):
-                if href.rstrip("/") not in ("nl/aanbod", "/nl/aanbod", "aanbod", "/aanbod"):
-                    woning_a = a
-                    break
+            if is_listing_href(href):
+                woning_a = a
+                break
 
         if not woning_a:
             continue
@@ -246,9 +268,7 @@ def fetch_listings() -> List[Dict[str, str]]:
     # 2. Fallback: vind eventuele <a> tags die buiten cards staan
     for a in soup.find_all("a", href=True):
         raw_href = a["href"].strip()
-        if any(key in raw_href for key in ("nl/woning/", "/woning/", "nl/aanbod/", "/aanbod/")):
-            if raw_href.rstrip("/") in ("nl/aanbod", "/nl/aanbod", "aanbod", "/aanbod"):
-                continue
+        if is_listing_href(raw_href):
             listing_id = get_listing_identifier(raw_href)
             if listing_id not in seen_ids:
                 seen_ids.add(listing_id)

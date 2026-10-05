@@ -66,9 +66,9 @@ CALLMEBOT_API_KEY=jouw_eerste_api_key
 WHATSAPP_PHONE_2=31687654321
 CALLMEBOT_API_KEY_2=jouw_tweede_api_key
 
-# Optionele portaalconfiguratie (standaard voorgeprogrammeerd)
+# Optionele portaalconfiguratie (standaard op huurwoningen van De HuisSleutel)
 # PORTAL_NAME=Woningaanbod
-# PORTAL_URL=https://...
+# PORTAL_URL=https://www.dehuissleutel.nl/nl/aanbod/huurwoningen
 # PORTAL_BASE_URL=https://...
 ```
 
