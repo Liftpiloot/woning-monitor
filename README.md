@@ -6,7 +6,7 @@ Automatische monitoring van nieuw woningaanbod met directe WhatsApp-notificaties
 
 ## Functionaliteiten
 
-- **Webscraping:** Haalt periodiek de actuele woningpagina op met standaard browserheaders.
+- **Webscraping met fallback:** Probeert standaard beide De HuisSleutel-overzichtspagina's (`/nl/aanbod/huurwoningen` en `/nl/aanbod`) met standaard browserheaders.
 - **Deduplicatie:** Houdt reeds geziene woningen bij in `seen_listings.json`.
 - **Meerdere Telefoonnummers:** Ondersteunt één of meerdere WhatsApp-nummers (bijv. voor partners of huisgenoten).
 - **WhatsApp Notificaties:** Verstuurt direct een gestructureerd WhatsApp-bericht met titel, huurprijs, details en directe link zodra er een nieuw pand online staat.
@@ -66,11 +66,14 @@ CALLMEBOT_API_KEY=jouw_eerste_api_key
 WHATSAPP_PHONE_2=31687654321
 CALLMEBOT_API_KEY_2=jouw_tweede_api_key
 
-# Optionele portaalconfiguratie (standaard op huurwoningen van De HuisSleutel)
+# Optionele portaalconfiguratie
 # PORTAL_NAME=Woningaanbod
 # PORTAL_URL=https://www.dehuissleutel.nl/nl/aanbod/huurwoningen
 # PORTAL_BASE_URL=https://...
 ```
+
+Zonder `PORTAL_URL` controleert de monitor standaard eerst `https://www.dehuissleutel.nl/nl/aanbod/huurwoningen` en daarna `https://www.dehuissleutel.nl/nl/aanbod`.  
+Als je `PORTAL_URL` expliciet instelt, gebruikt de monitor die URL als primaire/custom bron.
 
 ### Stap 3: Monitor uitvoeren
 Voer het script uit:
